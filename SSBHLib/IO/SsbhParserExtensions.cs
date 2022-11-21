@@ -561,15 +561,34 @@
             return result;
         }
 
-        public static Formats.Meshes.MeshAttribute ParseMeshAttribute(this SsbhParser parser)
+        public static Formats.Meshes.MeshAttribute ParseMeshAttribute(this SsbhParser parser, Formats.SsbhString strAttr)
         {
             var result = new Formats.Meshes.MeshAttribute();
             result.Usage = parser.ReadInt32();
-            result.DataType = (Formats.Meshes.MeshAttribute.AttributeDataType)parser.ReadUInt32();
+
+            var flag = Formats.Meshes.MeshAttribute.AttributeDataType.Float3;
+            var dataTypeFlag = parser.ReadUInt32();
+            if(dataTypeFlag == 0x334)
+            {
+                flag = Formats.Meshes.MeshAttribute.AttributeDataType.Float3;
+            }
+            else if (dataTypeFlag == 0x437)
+            {
+                flag = Formats.Meshes.MeshAttribute.AttributeDataType.Float2;
+            }
+            else
+            {
+                throw new System.Exception();
+            }
+
+            result.DataType = flag;
             result.BufferIndex = parser.ReadInt32();
             result.BufferOffset = parser.ReadInt32();
-            result.SubIndex = parser.ReadUInt64();
-            result.Name = parser.ReadOffsetReadString();
+            result.SubIndex = parser.ReadUInt32();
+            result.AttributeStrings = new Formats.SsbhString[1];
+            result.AttributeStrings[0] = strAttr;
+
+            /*result.Name = parser.ReadOffsetReadString();
             {
                 // TODO: Extract this code to a method?
                 long absoluteOffset = parser.ReadRelativeGetAbsoluteOffset();
@@ -585,7 +604,7 @@
                 }
  
                 parser.Seek(previousPosition);
-            }
+            }*/
             return result;
         }
 
@@ -666,14 +685,60 @@
                 // TODO: Extract this code to a method?
                 long absoluteOffset = parser.ReadRelativeGetAbsoluteOffset();
                 long elementCount = parser.ReadInt64();
+                // for some reason if this is not 8,
+                if(elementCount != 8)
+                {
+                    //throw new System.Exception();
+                }
+
                 long previousPosition = parser.Position;
                 parser.Seek(absoluteOffset);
 
- 
+                var attrStr = new Formats.SsbhString[1];
+                attrStr[0] = new Formats.SsbhString();
+                attrStr[0].Text = "Position0";
+
                 result.Attributes = new Formats.Meshes.MeshAttribute[elementCount];
                 for (int i = 0; i < elementCount; i++)
                 {
-                    result.Attributes[i] = parser.ParseMeshAttribute();
+                    attrStr[0] = new Formats.SsbhString();
+                    if (i == 0)
+                    {
+                        attrStr[0].Text = "Position0";
+                    }
+                    else if (i == 1)
+                    {
+                        attrStr[0].Text = "Normal0";
+                    }
+                    else if (i == 2)
+                    {
+                        attrStr[0].Text = "Tangent0";
+                    }
+                    else if (i == 3)
+                    {
+                        attrStr[0].Text = "map1";
+                    }
+                    else if (i == 4)
+                    {
+                        attrStr[0].Text = "colorSet1";
+                    }
+                    else if (i == 5)
+                    {
+                        attrStr[0].Text = "colorSet1";
+                    }
+                    else if (i == 6)
+                    {
+                        attrStr[0].Text = "colorSet1";
+                    }
+                    else if (i == 7)
+                    {
+                        attrStr[0].Text = "colorSet1";
+                    }
+                    else
+                    {
+                        attrStr[0].Text = "Position0";
+                    }
+                    result.Attributes[i] = parser.ParseMeshAttribute(attrStr[0]);
                 }
  
                 parser.Seek(previousPosition);

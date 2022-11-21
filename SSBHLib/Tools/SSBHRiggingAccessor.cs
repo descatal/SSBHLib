@@ -68,13 +68,13 @@ namespace SSBHLib.Tools
             {
                 using (BinaryReader r = new BinaryReader(new MemoryStream(boneBuffer.Data)))
                 {
-                    for (int i = 0; i < boneBuffer.Data.Length / 6; i++)
+                    for (int i = 0; i < boneBuffer.Data.Length / 8; i++)
                     {
                         influences.Add(new SsbhVertexInfluence()
                         {
                             BoneName = boneBuffer.BoneName,
                             // TODO: Read an array of influence structs and store the string separately?
-                            VertexIndex = r.ReadUInt16(),
+                            VertexIndex = (ushort)r.ReadUInt32(),
                             Weight = r.ReadSingle()
                         });
                     }
