@@ -1,4 +1,6 @@
-﻿namespace SSBHLib.IO
+﻿using System.Collections.Generic;
+
+namespace SSBHLib.IO
 {
     /// <summary>
     /// Generated code for parsing SSBH types using a <see cref="SsbhParser"/>.
@@ -840,38 +842,78 @@
             result.Magic = parser.ReadUInt32();
             result.VersionMajor = parser.ReadUInt16();
             result.VersionMinor = parser.ReadUInt16();
-            result.FinalFrameIndex = parser.ReadSingle();
-            result.Unk1 = parser.ReadUInt16();
-            result.Unk2 = parser.ReadUInt16();
-            result.Name = parser.ReadOffsetReadString();
-            {
-                // TODO: Extract this code to a method?
-                long absoluteOffset = parser.ReadRelativeGetAbsoluteOffset();
-                long elementCount = parser.ReadInt64();
-                long previousPosition = parser.Position;
-                parser.Seek(absoluteOffset);
+            result.Version = result.VersionMajor.ToString() + "." + result.VersionMinor.ToString();
 
- 
-                result.Animations = new Formats.Animation.AnimGroup[elementCount];
-                for (int i = 0; i < elementCount; i++)
+            if(result.Version == "1.2")
+            {
+                result.Unk_V12_1 = parser.ReadUInt64();
+                result.FinalFrameIndex = parser.ReadSingle();
+                result.Unk_V12_2 = parser.ReadSingle();
+                result.Unk_V12_3 = parser.ReadSingle();
+                result.Unk_V12_4 = parser.ReadSingle();
                 {
-                    result.Animations[i] = parser.ParseAnimGroup();
-                }
- 
-                parser.Seek(previousPosition);
-            }
-            {
-                // TODO: Extract this code to a method?
-                long absoluteOffset = parser.ReadRelativeGetAbsoluteOffset();
-                long elementCount = parser.ReadInt64();
-                long previousPosition = parser.Position;
-                parser.Seek(absoluteOffset);
+                    // TODO: Extract this code to a method?
+                    long absoluteOffset = parser.ReadRelativeGetAbsoluteOffset();
+                    long elementCount = parser.ReadInt64();
+                    long previousPosition = parser.Position;
+                    parser.Seek(absoluteOffset);
 
-                result.Buffer = parser.ReadBytes((int)elementCount);
- 
-                parser.Seek(previousPosition);
+                    result.Track_V12 = new Formats.Animation.AnimTrackV12[elementCount];
+                    for (int i = 0; i < elementCount; i++)
+                    {
+                        result.Track_V12[i] = parser.ParseAnimTrackV12();
+                    }
+
+                    parser.Seek(previousPosition);
+                }
+                {
+                    // TODO: Extract this code to a method?
+                    long absoluteOffset = parser.ReadRelativeGetAbsoluteOffset();
+                    long elementCount = parser.ReadInt64();
+                    parser.Seek(absoluteOffset);
+
+                    result.Buffers_V12 = parser.ParseBufferIndexV12(elementCount);
+                }
+
+                result.Name = parser.ReadString();
+
+                return result;
             }
-            return result;
+            else
+            {
+                result.FinalFrameIndex = parser.ReadSingle();
+                result.Unk1 = parser.ReadUInt16();
+                result.Unk2 = parser.ReadUInt16();
+                result.Name = parser.ReadOffsetReadString();
+                {
+                    // TODO: Extract this code to a method?
+                    long absoluteOffset = parser.ReadRelativeGetAbsoluteOffset();
+                    long elementCount = parser.ReadInt64();
+                    long previousPosition = parser.Position;
+                    parser.Seek(absoluteOffset);
+
+
+                    result.Animations = new Formats.Animation.AnimGroup[elementCount];
+                    for (int i = 0; i < elementCount; i++)
+                    {
+                        result.Animations[i] = parser.ParseAnimGroup();
+                    }
+
+                    parser.Seek(previousPosition);
+                }
+                {
+                    // TODO: Extract this code to a method?
+                    long absoluteOffset = parser.ReadRelativeGetAbsoluteOffset();
+                    long elementCount = parser.ReadInt64();
+                    long previousPosition = parser.Position;
+                    parser.Seek(absoluteOffset);
+
+                    result.Buffer = parser.ReadBytes((int)elementCount);
+
+                    parser.Seek(previousPosition);
+                }
+                return result;
+            }
         }
 
         public static Formats.Animation.AnimGroup ParseAnimGroup(this SsbhParser parser)
@@ -930,6 +972,57 @@
             result.DataOffset = parser.ReadUInt32();
             result.DataSize = parser.ReadInt64();
             return result;
+        }
+
+        public static Formats.Animation.AnimTrackV12 ParseAnimTrackV12(this SsbhParser parser)
+        {
+            var result = new Formats.Animation.AnimTrackV12();
+            result.Name = parser.ReadOffsetReadString();
+            result.Type = (Formats.Animation.AnimTrackTypeV12)parser.ReadUInt64();
+            {
+                // TODO: Extract this code to a method?
+                long absoluteOffset = parser.ReadRelativeGetAbsoluteOffset();
+                long elementCount = parser.ReadInt64();
+                long previousPosition = parser.Position;
+                parser.Seek(absoluteOffset);
+
+                result.Properties = new Formats.Animation.AnimPropertiesV12[elementCount];
+                for (int i = 0; i < elementCount; i++)
+                {
+                    result.Properties[i] = parser.ParseAnimPropertiesV12();
+                }
+
+                parser.Seek(previousPosition);
+            }
+            return result;
+        }
+
+        public static Formats.Animation.AnimPropertiesV12 ParseAnimPropertiesV12(this SsbhParser parser)
+        {
+            var result = new Formats.Animation.AnimPropertiesV12();
+            result.Name = parser.ReadOffsetReadString();
+            result.BufferIndex = parser.ReadUInt64();
+            return result;
+        }
+
+        public static List<byte[]> ParseBufferIndexV12(this SsbhParser parser, long elementCount)
+        {
+            List<byte[]> Buffers = new List<byte[]>();
+
+            for(int i = 0; i < elementCount; i++)
+            {
+                long absoluteOffset = parser.ReadRelativeGetAbsoluteOffset();
+                long bufferSize = parser.ReadInt64();
+                long previousPosition = parser.Position;
+                parser.Seek(absoluteOffset);
+
+                var Buffer = parser.ReadBytes((int)bufferSize);
+
+                Buffers.Add(Buffer);
+                parser.Seek(previousPosition);
+            }
+
+            return Buffers;
         }
 
         public static Formats.Materials.MatlAttribute.MatlBlendState ParseMatlBlendState(this SsbhParser parser)

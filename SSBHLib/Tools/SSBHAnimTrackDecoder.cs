@@ -90,6 +90,43 @@ namespace SSBHLib.Tools
             return output.ToArray();
         }
 
+
+        /// <summary>
+        /// Reads the data out of the given track.
+        /// </summary>
+        /// <param name="prop"></param>
+        /// <returns></returns>
+        public object[] ReadTrackV12(AnimPropertiesV12 prop)
+        {
+            //Console.WriteLine(Track.Name + " " + Track.Flags.ToString("X") + " " + Track.FrameCount + " " + Track.DataOffset.ToString("X"));
+            List<object> output = new List<object>();
+            using (SsbhParser parser = new SsbhParser(new MemoryStream(animFile.Buffers_V12[(int)prop.BufferIndex])))
+            {
+                parser.Seek(prop.DataOffset);
+
+                if (CheckFlag(prop.Flags, 0xFF00, AnimTrackFlags.Constant))
+                {
+                    output.Add(ReadDirect(parser, prop.Flags));
+                }
+                if (CheckFlag(prop.Flags, 0xFF00, AnimTrackFlags.ConstTransform))
+                {
+                    // TODO: investigate more
+                    output.Add(ReadDirect(parser, prop.Flags));
+                }
+                if (CheckFlag(prop.Flags, 0xFF00, AnimTrackFlags.Direct))
+                {
+                    for (int i = 0; i < prop.FrameCount; i++)
+                        output.Add(ReadDirect(parser, prop.Flags));
+                }
+                if (CheckFlag(prop.Flags, 0xFF00, AnimTrackFlags.Compressed))
+                {
+                    output.AddRange(ReadCompressed(parser, prop.Flags));
+                }
+            }
+
+            return output.ToArray();
+        }
+
         /// <summary>
         /// Reads the data from a compressed track
         /// </summary>
