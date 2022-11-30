@@ -578,6 +578,10 @@ namespace SSBHLib.IO
             {
                 flag = Formats.Meshes.MeshAttribute.AttributeDataType.Float2;
             }
+            else if (dataTypeFlag == 0x434)
+            {
+                flag = Formats.Meshes.MeshAttribute.AttributeDataType.Float4;
+            }
             else
             {
                 throw new System.Exception();

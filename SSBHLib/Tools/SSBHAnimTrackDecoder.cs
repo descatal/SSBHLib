@@ -165,7 +165,10 @@ namespace SSBHLib.Tools
         {
             List<object> output = new List<object>();
 
-            SsbhAnimCompressedHeaderV12 header = reader.ReadStruct<SsbhAnimCompressedHeaderV12>();
+            SsbhAnimCompressedHeaderV12 header = new SsbhAnimCompressedHeaderV12(); //reader.ReadStruct<SsbhAnimCompressedHeaderV12>();
+
+            header.Flags = 0xD;
+            header.BitsPerEntry = 0x91;
 
             ReadTransformV12(reader, output, header);
 
