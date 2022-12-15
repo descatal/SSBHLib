@@ -15,6 +15,11 @@
         Constant = 0x0500,
     }
 
+    public enum AnimTrackFlagsV12
+    {
+
+    }
+
     public class AnimTrack : SsbhFile
     {
         public string Name { get; set; }

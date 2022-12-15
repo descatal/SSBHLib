@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 
 namespace SSBHLib.Tools
 {
@@ -108,7 +109,34 @@ namespace SSBHLib.Tools
             List<object> output = new List<object>();
             using (SsbhParser parser = new SsbhParser(new MemoryStream(animFile.Buffers_V12[(int)prop.BufferIndex])))
             {
-                output.AddRange(ReadCompressedV12(parser));
+                var flag = parser.Read();
+                var flag2 = parser.Read();
+                var unk_0 = parser.ReadUInt16();
+                var frameCount = parser.ReadUInt32();
+
+                var unk_1 = parser.ReadSingle();
+                var unk_2 = parser.ReadSingle();
+                var unk_3 = parser.ReadUInt16();
+                var bitsperentry = parser.ReadUInt16();
+
+                SsbhAnimCompressedHeader header = new SsbhAnimCompressedHeader();
+                header.FrameCount = (int)frameCount;
+                header.BitsPerEntry = bitsperentry;
+
+                uint dataOffset = (uint)parser.BaseStream.Position;
+
+                if ((flag) == (uint)0x9)
+                {
+                    if((flag2 & 0xF0) == (uint)0x40)
+                    {
+                        ReadVector4(parser, output, dataOffset, header);
+                    }
+
+                    if ((flag2 & 0xF0) == (uint)0x30)
+                    {
+                        ReadVector3(parser, output, dataOffset, header);
+                    }
+                }
             }
 
             return output.ToArray();
@@ -155,26 +183,6 @@ namespace SSBHLib.Tools
             return output.ToArray();
         }
 
-        /// <summary>
-        /// Reads the data from a compressed track
-        /// </summary>
-        /// <param name="reader"></param>
-        /// <param name="flags"></param>
-        /// <returns></returns>
-        private object[] ReadCompressedV12(SsbhParser reader)
-        {
-            List<object> output = new List<object>();
-
-            SsbhAnimCompressedHeaderV12 header = new SsbhAnimCompressedHeaderV12(); //reader.ReadStruct<SsbhAnimCompressedHeaderV12>();
-
-            header.Flags = 0xD;
-            header.BitsPerEntry = 0x91;
-
-            ReadTransformV12(reader, output, header);
-
-            return output.ToArray();
-        }
-
         private void ReadTransform(SsbhParser reader, List<object> output, uint dataOffset, SsbhAnimCompressedHeader header)
         {
             var decompressed = DecompressTransform(reader, dataOffset, header);
@@ -182,11 +190,11 @@ namespace SSBHLib.Tools
                 output.Add(v);
         }
 
-        private void ReadTransformV12(SsbhParser reader, List<object> output, SsbhAnimCompressedHeaderV12 header)
+        private void ReadVector3(SsbhParser reader, List<object> output, uint dataOffset, SsbhAnimCompressedHeader header)
         {
-            var decompressed = DecompressTransformV12(reader, header);
-            foreach (var v in decompressed)
-                output.Add(v);
+            var decompressed = DecompressValues(reader, dataOffset, header, 3);
+            foreach (var decom in decompressed)
+                output.Add(new AnimTrackCustomVector4(decom[0], decom[1], decom[2], decom[3]));
         }
 
         private void ReadVector4(SsbhParser reader, List<object> output, uint dataOffset, SsbhAnimCompressedHeader header)
@@ -216,6 +224,52 @@ namespace SSBHLib.Tools
         /// <param name="valueCount"></param>
         /// <returns></returns>
         private List<float[]> DecompressValues(SsbhParser parser, uint dataOffset, SsbhAnimCompressedHeader header, int valueCount)
+        {
+            List<float[]> transforms = new List<float[]>(header.FrameCount);
+
+            // PreProcess
+            SsbhAnimCompressedItem[] items = parser.ReadStructs<SsbhAnimCompressedItem>(valueCount);
+
+            parser.Seek(dataOffset + header.DefaultDataOffset);
+
+            float[] defaultValues = GetDefaultValues(parser, valueCount);
+
+            parser.Seek(dataOffset + header.CompressedDataOffset);
+            for (int frameIndex = 0; frameIndex < header.FrameCount; frameIndex++)
+            {
+                // Copy default values.
+                float[] values = new float[valueCount];
+                for (int i = 0; i < valueCount; i++)
+                    values[i] = defaultValues[i];
+
+                for (int itemIndex = 0; itemIndex < items.Length; itemIndex++)
+                {
+                    var item = items[itemIndex];
+
+                    // Decompress
+                    int valueBitCount = (int)item.Count;
+                    if (valueBitCount == 0)
+                        continue;
+
+                    int value = parser.ReadBits(valueBitCount);
+                    int scale = 0;
+                    for (int k = 0; k < valueBitCount; k++)
+                        scale |= 0x1 << k;
+
+                    float frameValue = Lerp(item.Start, item.End, 0, 1, value / (float)scale);
+                    if (float.IsNaN(frameValue))
+                        frameValue = 0;
+
+                    values[itemIndex] = frameValue;
+                }
+
+                transforms.Add(values);
+            }
+
+            return transforms;
+        }
+
+        private List<float[]> DecompressValuesV12(SsbhParser parser, uint dataOffset, SsbhAnimCompressedHeader header, int valueCount)
         {
             List<float[]> transforms = new List<float[]>(header.FrameCount);
 
@@ -302,166 +356,6 @@ namespace SSBHLib.Tools
 
             parser.Seek(dataOffset + header.CompressedDataOffset);
             for (int frame = 0; frame < header.FrameCount; frame++)
-            {
-                AnimTrackTransform transform = new AnimTrackTransform()
-                {
-                    X = xpos,
-                    Y = ypos,
-                    Z = zpos,
-                    Rx = xrot,
-                    Ry = yrot,
-                    Rz = zrot,
-                    Rw = wrot,
-                    Sx = xsca,
-                    Sy = ysca,
-                    Sz = zsca,
-                    CompensateScale = csca // TODO: What should the default be?
-                };
-                // TODO: "itemIndex" is a really hacky way of handling this.
-                for (int itemIndex = 0; itemIndex < items.Length; itemIndex++)
-                {
-                    // First check if this track should be parsed
-                    // TODO: Don't hard code these flags.
-                    if (!((itemIndex == 0 && (header.Flags & 0x3) == 0x3) //isotropic scale
-                                || (itemIndex >= 0 && itemIndex <= 2 && (header.Flags & 0x3) == 0x1) //normal scale
-                                || (itemIndex > 2 && itemIndex <= 5 && (header.Flags & 0x4) > 0)
-                                || (itemIndex > 5 && itemIndex <= 8 && (header.Flags & 0x8) > 0)))
-                    {
-                        continue;
-                    }
-
-                    var item = items[itemIndex];
-
-                    // Decompress
-                    int valueBitCount = (int)item.Count;
-                    if (valueBitCount == 0)
-                        continue;
-
-                    int value = parser.ReadBits(valueBitCount);
-                    int scale = 0;
-                    for (int k = 0; k < valueBitCount; k++)
-                        scale |= 0x1 << k;
-
-                    float frameValue = Lerp(item.Start, item.End, 0, 1, value / (float)scale);
-                    if (float.IsNaN(frameValue))
-                        frameValue = 0;
-
-                    // the Transform type relies a lot on flags
-
-                    transform.ScaleType = (ushort)(header.Flags & 0x3);
-                    if ((header.Flags & 0x3) == 0x3)
-                    {
-                        // Uniform scale.
-                        if (itemIndex == 0)
-                        {
-                            transform.Sx = frameValue;
-                            transform.Sy = frameValue;
-                            transform.Sz = frameValue;
-                        }
-                    }
-                    else if ((header.Flags & 0x3) == 0x2)
-                    {
-                        // Unk2 scaling.
-                        switch (itemIndex)
-                        {
-                            case 0:
-                                transform.Sx = frameValue;
-                                break;
-                            case 1:
-                                transform.Sy = frameValue;
-                                break;
-                            case 2:
-                                transform.Sz = frameValue;
-                                break;
-                        }
-                    }
-                    else if ((header.Flags & 0x3) == 0x1)
-                    {
-                        //Scale normal
-                        switch (itemIndex)
-                        {
-                            case 0:
-                                transform.Sx = frameValue;
-                                break;
-                            case 1:
-                                transform.Sy = frameValue;
-                                break;
-                            case 2:
-                                transform.Sz = frameValue;
-                                break;
-                        }
-                    }
-                    //Rotation and Position
-                    switch (itemIndex)
-                    {
-                        case 3:
-                            transform.Rx = frameValue;
-                            break;
-                        case 4:
-                            transform.Ry = frameValue;
-                            break;
-                        case 5:
-                            transform.Rz = frameValue;
-                            break;
-                        case 6:
-                            transform.X = frameValue;
-                            break;
-                        case 7:
-                            transform.Y = frameValue;
-                            break;
-                        case 8:
-                            transform.Z = frameValue;
-                            break;
-                    }
-                }
-
-                // Rotations have an extra bit at the end
-                if ((header.Flags & 0x4) > 0)
-                {
-                    bool wFlip = parser.ReadBits(1) == 1;
-
-                    // W is calculated
-                    transform.Rw = (float)Math.Sqrt(Math.Abs(1 - (transform.Rx * transform.Rx + transform.Ry * transform.Ry + transform.Rz * transform.Rz)));
-
-                    if (wFlip)
-                        transform.Rw = -transform.Rw;
-                }
-
-                transforms[frame] = transform;
-            }
-
-            return transforms;
-        }
-
-        /// <summary>
-        /// decompresses transform values from a track
-        /// </summary>
-        /// <param name="parser"></param>
-        /// <param name="dataOffset"></param>
-        /// <param name="header"></param>
-        /// <returns></returns>
-        private AnimTrackTransform[] DecompressTransformV12(SsbhParser parser, SsbhAnimCompressedHeaderV12 header)
-        {
-            AnimTrackTransform[] transforms = new AnimTrackTransform[60];
-
-            // PreProcess
-            SsbhAnimCompressedItem[] items = parser.ReadStructs<SsbhAnimCompressedItem>(9);
-
-            parser.Seek(0x4);
-
-            int csca = parser.ReadInt32();
-            float xsca = parser.ReadSingle();
-            float ysca = parser.ReadSingle();
-            float zsca = parser.ReadSingle();
-            float xrot = parser.ReadSingle();
-            float yrot = parser.ReadSingle();
-            float zrot = parser.ReadSingle();
-            float wrot = parser.ReadSingle();
-            float xpos = parser.ReadSingle();
-            float ypos = parser.ReadSingle();
-            float zpos = parser.ReadSingle();
-
-            for (int frame = 0; frame < 60; frame++)
             {
                 AnimTrackTransform transform = new AnimTrackTransform()
                 {
